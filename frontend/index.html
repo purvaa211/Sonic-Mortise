@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SonicMortise - Connector Attestation</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+            mono: ['JetBrains Mono', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace']
+          },
+          colors: {
+            bgMain: '#0f1115',
+            cardBg: '#161920',
+            cardHover: '#1c202a',
+            borderSubtle: '#232733',
+            borderFocus: '#353c4d',
+            textPrimary: '#f1f3f7',
+            textSecondary: '#8d95a5',
+            textMuted: '#5b6375',
+            brandBlue: '#3b82f6',
+            statusPass: '#22c55e',
+            statusFail: '#ef4444',
+            statusWarn: '#f59e0b'
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-bgMain text-textPrimary min-h-screen antialiased flex flex-col font-sans">
+
+  <!-- TOP NAVIGATION -->
+  <header class="border-b border-borderSubtle bg-cardBg/90 backdrop-blur-sm sticky top-0 z-30">
+    <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+      
+      <!-- Brand & Title -->
+      <div class="flex items-baseline gap-3">
+        <span class="text-lg font-semibold tracking-tight text-white">SonicMortise</span>
+        <span class="text-xs text-textMuted hidden sm:inline">Ultrasonic Connector Attestation System</span>
+      </div>
+
+      <!-- Connection & Status Bar -->
+      <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2 bg-bgMain px-3 py-1.5 rounded-md border border-borderSubtle text-xs">
+          <span id="connDot" class="w-2 h-2 rounded-full bg-statusPass"></span>
+          <span id="connLabel" class="text-textSecondary font-medium">Simulation Mode</span>
+        </div>
+
+        <select id="portSelect" class="bg-bgMain text-xs text-textSecondary border border-borderSubtle rounded-md px-2.5 py-1.5 focus:outline-none focus:border-brandBlue transition">
+          <option value="SIMULATION">Virtual Cavity (Sim)</option>
+        </select>
+
+        <button id="btnConnect" onclick="toggleConnect()" class="text-xs px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-textPrimary font-medium border border-borderSubtle transition">
+          Connect
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- MAIN WORKSPACE -->
+  <main class="max-w-6xl mx-auto px-6 py-8 flex-1 w-full space-y-6">
+
+    <!-- PRIMARY STATUS SUMMARY -->
+    <div id="statusContainer" class="bg-cardBg border border-borderSubtle rounded-xl p-6 transition-colors duration-200">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        
+        <!-- Left: Status Verdict -->
+        <div class="space-y-1.5">
+          <div class="flex items-center gap-3">
+            <span id="statusTag" class="text-xs font-semibold px-2.5 py-1 rounded-md bg-statusPass/15 text-statusPass border border-statusPass/30 tracking-wide uppercase font-mono">
+              MATCH
+            </span>
+            <span id="policyTag" class="text-xs text-textSecondary font-mono">
+              Policy: Admitted to Data Path
+            </span>
+          </div>
+          <div id="statusTitle" class="text-2xl font-bold tracking-tight text-white">
+            Connector Physically Verified
+          </div>
+          <p id="statusReason" class="text-sm text-textSecondary max-w-xl">
+            Acoustic reflection profile matches the enrolled reference baseline. Connector is securely seated.
+          </p>
+        </div>
+
+        <!-- Right: Primary Metrics -->
+        <div class="flex items-center gap-8 pt-4 md:pt-0 border-t md:border-t-0 border-borderSubtle">
+          <div>
+            <div class="text-xs text-textMuted uppercase font-mono tracking-wider">Similarity Score</div>
+            <div id="metricScore" class="text-3xl font-bold font-mono text-statusPass mt-0.5">97.2%</div>
+            <div class="text-[11px] text-textMuted mt-0.5">Threshold: &ge; 75.0%</div>
+          </div>
+
+          <div class="h-10 w-[1px] bg-borderSubtle hidden sm:block"></div>
+
+          <div>
+            <div class="text-xs text-textMuted uppercase font-mono tracking-wider">Active Challenge</div>
+            <div id="metricChallenge" class="text-xl font-bold font-mono text-textPrimary mt-0.5">Nonce #05</div>
+            <div id="metricSeq" class="text-[11px] text-textMuted font-mono mt-0.5">Sequence 104</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- MAIN GRID: WAVEFORM (LEFT 2/3) + DATA (RIGHT 1/3) -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+      <!-- LEFT COLUMN: OSCILLOSCOPE & CONTROLS -->
+      <div class="lg:col-span-2 space-y-6">
+
+        <!-- ACOUSTIC RESPONSE OSCILLOSCOPE -->
+        <div class="bg-cardBg border border-borderSubtle rounded-xl p-5 space-y-4">
+          
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="text-sm font-semibold text-white">Ultrasonic Response Waveform</h2>
+              <p class="text-xs text-textMuted">40 kHz acoustic reflection captured inside the connector cavity</p>
+            </div>
+
+            <!-- Legend -->
+            <div class="flex items-center gap-4 text-xs font-mono">
+              <span class="flex items-center gap-1.5 text-textMuted">
+                <span class="w-3.5 h-[1.5px] border-t border-dashed border-textMuted inline-block"></span> Baseline
+              </span>
+              <span class="flex items-center gap-1.5 text-statusPass" id="waveformLegend">
+                <span class="w-3.5 h-[2px] bg-statusPass inline-block"></span> Live Signal
+              </span>
+            </div>
+          </div>
+
+          <!-- Chart Canvas -->
+          <div class="h-64 bg-bgMain rounded-lg border border-borderSubtle p-2 relative">
+            <canvas id="waveformCanvas"></canvas>
+          </div>
+
+          <!-- Feature Breakdown Strip -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+            <div class="bg-bgMain p-3 rounded-lg border border-borderSubtle">
+              <span class="text-[11px] text-textMuted uppercase font-mono block">Peak Amplitude</span>
+              <span id="featPeak" class="text-base font-semibold font-mono text-textPrimary">1.41 V</span>
+            </div>
+            <div class="bg-bgMain p-3 rounded-lg border border-borderSubtle">
+              <span class="text-[11px] text-textMuted uppercase font-mono block">Arrival Time (ToF)</span>
+              <span id="featOnset" class="text-base font-semibold font-mono text-textPrimary">38 µs</span>
+            </div>
+            <div class="bg-bgMain p-3 rounded-lg border border-borderSubtle">
+              <span class="text-[11px] text-textMuted uppercase font-mono block">Time-Gated Energy</span>
+              <span id="featEnergy" class="text-base font-semibold font-mono text-textPrimary">842k</span>
+            </div>
+            <div class="bg-bgMain p-3 rounded-lg border border-borderSubtle">
+              <span class="text-[11px] text-textMuted uppercase font-mono block">Correlation (R)</span>
+              <span id="featCorr" class="text-base font-semibold font-mono text-statusPass">0.978</span>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- WORKSPACE CONTROLS -->
+        <div class="bg-cardBg border border-borderSubtle rounded-xl p-5 space-y-4">
+          <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div>
+              <h3 class="text-sm font-semibold text-white">Attestation Operations</h3>
+              <p class="text-xs text-textMuted">Trigger interrogation cycle or enroll current connector as accepted baseline</p>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button onclick="triggerEnroll()" class="text-xs px-3.5 py-2 rounded-md bg-zinc-800 hover:bg-zinc-700 text-textPrimary font-medium border border-borderSubtle transition">
+                Enroll Baseline
+              </button>
+
+              <button onclick="triggerVerify()" class="text-xs px-3.5 py-2 rounded-md bg-brandBlue hover:bg-blue-600 text-white font-medium transition shadow-sm">
+                Run Single Interrogation
+              </button>
+
+              <button id="btnContinuous" onclick="toggleContinuous()" class="text-xs px-3 py-2 rounded-md bg-zinc-800 hover:bg-zinc-700 text-textSecondary border border-borderSubtle transition flex items-center gap-2 font-mono">
+                <span class="w-1.5 h-1.5 rounded-full bg-statusPass"></span>
+                Continuous
+              </button>
+            </div>
+          </div>
+
+          <!-- SIMULATION TEST CONDITIONS -->
+          <div class="pt-3 border-t border-borderSubtle">
+            <span class="text-xs text-textMuted font-medium block mb-2">Simulate Physical Conditions:</span>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <button onclick="setCondition('SEATED')" class="p-2.5 rounded-lg border border-borderSubtle hover:border-statusPass/50 bg-bgMain text-left transition group">
+                <div class="text-xs font-medium text-textPrimary group-hover:text-statusPass">Seated Correctly</div>
+                <div class="text-[10px] text-textMuted">Authentic Assembly</div>
+              </button>
+
+              <button onclick="setCondition('LOOSE')" class="p-2.5 rounded-lg border border-borderSubtle hover:border-statusWarn/50 bg-bgMain text-left transition group">
+                <div class="text-xs font-medium text-textPrimary group-hover:text-statusWarn">Loose / Ajar</div>
+                <div class="text-[10px] text-textMuted">Mechanical Drift</div>
+              </button>
+
+              <button onclick="setCondition('DISPLACED')" class="p-2.5 rounded-lg border border-borderSubtle hover:border-statusFail/50 bg-bgMain text-left transition group">
+                <div class="text-xs font-medium text-textPrimary group-hover:text-statusFail">Displaced / Tamper</div>
+                <div class="text-[10px] text-textMuted">Acoustic Path Altered</div>
+              </button>
+
+              <button onclick="setCondition('NOISE')" class="p-2.5 rounded-lg border border-borderSubtle hover:border-textSecondary bg-bgMain text-left transition group">
+                <div class="text-xs font-medium text-textPrimary group-hover:text-textSecondary">Excessive Noise</div>
+                <div class="text-[10px] text-textMuted">Low Capture Quality</div>
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- RIGHT COLUMN: SENSOR BINDING & AUDIT TRAIL -->
+      <div class="space-y-6">
+
+        <!-- SENSOR DATA & CRYPTO BINDING -->
+        <div class="bg-cardBg border border-borderSubtle rounded-xl p-5 space-y-4">
+          <div>
+            <h2 class="text-sm font-semibold text-white">Sensor Data &amp; Attestation Binding</h2>
+            <p class="text-xs text-textMuted">Sensor payload signed with attestation metadata</p>
+          </div>
+
+          <!-- Sensor Readings -->
+          <div class="grid grid-cols-2 gap-3">
+            <div class="bg-bgMain p-3 rounded-lg border border-borderSubtle">
+              <span class="text-[11px] text-textMuted block font-mono">Temperature</span>
+              <span id="sensorTemp" class="text-xl font-semibold font-mono text-textPrimary mt-0.5 block">26.4 °C</span>
+              <span class="text-[10px] text-statusPass font-mono mt-1 block">Verified</span>
+            </div>
+
+            <div class="bg-bgMain p-3 rounded-lg border border-borderSubtle">
+              <span class="text-[11px] text-textMuted block font-mono">Pressure</span>
+              <span id="sensorPressure" class="text-xl font-semibold font-mono text-textPrimary mt-0.5 block">101.3 kPa</span>
+              <span class="text-[10px] text-statusPass font-mono mt-1 block">Nominal</span>
+            </div>
+          </div>
+
+          <!-- HMAC SHA-256 Digest -->
+          <div class="bg-bgMain p-3 rounded-lg border border-borderSubtle space-y-1.5">
+            <div class="flex items-center justify-between text-[11px] text-textMuted font-mono">
+              <span>HMAC-SHA256 SIGNATURE</span>
+              <span class="text-statusPass">VALID</span>
+            </div>
+            <div id="hmacDigest" class="text-xs font-mono text-textSecondary break-all bg-cardBg/60 p-2 rounded border border-borderSubtle leading-relaxed">
+              e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+            </div>
+            <div class="text-[10px] text-textMuted">
+              Binds sequence ID, challenge code, attestation state, and sensor payload.
+            </div>
+          </div>
+
+        </div>
+
+        <!-- RECENT ACTIVITY LOG -->
+        <div class="bg-cardBg border border-borderSubtle rounded-xl p-5 space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-semibold text-white">Attestation Log</h3>
+            <span class="text-[10px] font-mono text-textMuted">Recent Events</span>
+          </div>
+
+          <div id="logList" class="space-y-1.5 max-h-56 overflow-y-auto text-xs font-mono pr-1">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="border-t border-borderSubtle bg-cardBg py-4 text-xs text-textMuted">
+    <div class="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-2">
+      <div>SonicMortise Physical-Layer Attestation Interface</div>
+      <div class="text-[11px]">VIT Pune &bull; Department of IoT, Cybersecurity and Blockchain</div>
+    </div>
+  </footer>
+
+  <!-- SCRIPT -->
+  <script>
+    // Waveform Chart Setup
+    const ctx = document.getElementById('waveformCanvas').getContext('2d');
+    const labels = Array.from({length: 100}, (_, i) => `${i * 3}`);
+
+    const waveChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: 'Baseline',
+            data: Array(100).fill(2048),
+            borderColor: '#5b6375',
+            borderWidth: 1.5,
+            borderDash: [3, 3],
+            pointRadius: 0,
+            fill: false,
+            tension: 0.15
+          },
+          {
+            label: 'Current Response',
+            data: Array(100).fill(2048),
+            borderColor: '#22c55e',
+            borderWidth: 2,
+            pointRadius: 0,
+            fill: false,
+            tension: 0.15
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 180 },
+        plugins: {
+          legend: { display: false },
+          tooltip: { enabled: true }
+        },
+        scales: {
+          x: {
+            title: { display: true, text: 'Time (µs)', color: '#5b6375', font: { size: 10, family: 'monospace' } },
+            grid: { color: '#1c202a' },
+            ticks: { color: '#5b6375', maxTicksLimit: 8, font: { family: 'monospace', size: 10 } }
+          },
+          y: {
+            min: 0,
+            max: 4095,
+            title: { display: true, text: 'ADC (Counts)', color: '#5b6375', font: { size: 10, family: 'monospace' } },
+            grid: { color: '#1c202a' },
+            ticks: { color: '#5b6375', font: { family: 'monospace', size: 10 } }
+          }
+        }
+      }
+    });
+
+    let ws = null;
+    let isContinuous = true;
+
+    function initWebSocket() {
+      const loc = window.location;
+      const wsUrl = (loc.protocol === 'https:' ? 'wss://' : 'ws://') + loc.host + '/ws';
+      ws = new WebSocket(wsUrl);
+
+      ws.onmessage = (event) => {
+        try {
+          const packet = JSON.parse(event.data);
+          renderState(packet);
+        } catch (e) {
+          console.error("Parse error:", e);
+        }
+      };
+
+      ws.onclose = () => {
+        setTimeout(initWebSocket, 2000);
+      };
+    }
+
+    function renderState(pkt) {
+      const state = pkt.state || 'INVALID_INDETERMINATE';
+      const container = document.getElementById('statusContainer');
+      const tag = document.getElementById('statusTag');
+      const title = document.getElementById('statusTitle');
+      const reason = document.getElementById('statusReason');
+      const policy = document.getElementById('policyTag');
+      const scoreEl = document.getElementById('metricScore');
+      const waveLegend = document.getElementById('waveformLegend');
+
+      if (state === 'MATCH') {
+        container.style.borderColor = '#22c55e44';
+        tag.className = "text-xs font-semibold px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 tracking-wide uppercase font-mono";
+        tag.innerText = "MATCH";
+        policy.innerText = "Policy: Admitted to Data Path";
+        title.innerText = "Connector Physically Verified";
+        reason.innerText = pkt.reason || "Acoustic reflection profile matches the enrolled baseline. Connector is authentic and seated.";
+        scoreEl.innerText = `${pkt.score || 0}%`;
+        scoreEl.className = "text-3xl font-bold font-mono text-emerald-400 mt-0.5";
+        waveChart.data.datasets[1].borderColor = '#22c55e';
+        waveLegend.className = "flex items-center gap-1.5 text-emerald-400";
+        waveLegend.children[0].className = "w-3.5 h-[2px] bg-emerald-400 inline-block";
+      } else if (state === 'MISMATCH') {
+        container.style.borderColor = '#ef444444';
+        tag.className = "text-xs font-semibold px-2.5 py-1 rounded-md bg-rose-500/10 text-rose-400 border border-rose-500/30 tracking-wide uppercase font-mono";
+        tag.innerText = "MISMATCH";
+        policy.innerText = "Policy: Rejected / Blocked";
+        title.innerText = "Connector Tamper / Displacement Detected";
+        reason.innerText = pkt.reason || "Acoustic reflection does not match enrolled profile. Physical cavity altered or connector displaced.";
+        scoreEl.innerText = `${pkt.score || 0}%`;
+        scoreEl.className = "text-3xl font-bold font-mono text-rose-400 mt-0.5";
+        waveChart.data.datasets[1].borderColor = '#ef4444';
+        waveLegend.className = "flex items-center gap-1.5 text-rose-400";
+        waveLegend.children[0].className = "w-3.5 h-[2px] bg-rose-400 inline-block";
+      } else {
+        container.style.borderColor = '#f59e0b44';
+        tag.className = "text-xs font-semibold px-2.5 py-1 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/30 tracking-wide uppercase font-mono";
+        tag.innerText = "INDETERMINATE";
+        policy.innerText = "Policy: Quarantined / Remeasure";
+        title.innerText = "Acquisition Quality Low or Uncertain";
+        reason.innerText = pkt.reason || "Signal quality check failed or correlation is within uncertainty region. Retrying measurement.";
+        scoreEl.innerText = `${pkt.score || 0}%`;
+        scoreEl.className = "text-3xl font-bold font-mono text-amber-400 mt-0.5";
+        waveChart.data.datasets[1].borderColor = '#f59e0b';
+        waveLegend.className = "flex items-center gap-1.5 text-amber-400";
+        waveLegend.children[0].className = "w-3.5 h-[2px] bg-amber-400 inline-block";
+      }
+
+      // Meta info
+      document.getElementById('metricChallenge').innerText = `Nonce #0${pkt.challenge || 1}`;
+      document.getElementById('metricSeq').innerText = `Sequence ${pkt.seq || 0}`;
+
+      // Features
+      document.getElementById('featPeak').innerText = `${((pkt.peak_amp || 0)/4095*3.3).toFixed(2)} V`;
+      document.getElementById('featOnset').innerText = `${(pkt.onset_idx || 0) * 3} µs`;
+      document.getElementById('featEnergy').innerText = `${Math.round((pkt.energy || 0)/1000)}k`;
+      document.getElementById('featCorr').innerText = `${((pkt.score || 0)/100).toFixed(3)}`;
+
+      // Sensor Payload
+      if (pkt.sensor) {
+        document.getElementById('sensorTemp').innerText = `${pkt.sensor.temp || 25.0} °C`;
+        document.getElementById('sensorPressure').innerText = `${pkt.sensor.pressure || 101.3} kPa`;
+      }
+      if (pkt.hmac) {
+        document.getElementById('hmacDigest').innerText = pkt.hmac;
+      }
+
+      // Waveforms
+      if (pkt.wave && pkt.wave.length > 0) {
+        waveChart.data.datasets[1].data = pkt.wave;
+      }
+      if (pkt.enrolled_wave && pkt.enrolled_wave.length > 0) {
+        waveChart.data.datasets[0].data = pkt.enrolled_wave;
+      }
+      waveChart.update();
+
+      // Audit list
+      appendAuditLog(pkt);
+    }
+
+    function appendAuditLog(pkt) {
+      const list = document.getElementById('logList');
+      const time = pkt.timestamp || new Date().toLocaleTimeString();
+      const st = pkt.state || 'UNKNOWN';
+      const color = st === 'MATCH' ? 'text-emerald-400' : (st === 'MISMATCH' ? 'text-rose-400' : 'text-amber-400');
+
+      const item = document.createElement('div');
+      item.className = "flex items-center justify-between p-2 rounded bg-bgMain border border-borderSubtle text-[11px]";
+      item.innerHTML = `
+        <span class="text-textMuted">${time}</span>
+        <span class="text-textSecondary">Nonce #0${pkt.challenge}</span>
+        <span class="font-semibold ${color}">${st}</span>
+        <span class="text-textPrimary">${pkt.score}%</span>
+      `;
+      list.prepend(item);
+      if (list.children.length > 10) list.removeChild(list.lastChild);
+    }
+
+    // Actions
+    async function loadPorts() {
+      try {
+        const res = await fetch('/api/ports');
+        const data = await res.json();
+        const sel = document.getElementById('portSelect');
+        sel.innerHTML = '<option value="SIMULATION">Virtual Cavity (Sim)</option>';
+        data.ports.forEach(p => {
+          const opt = document.createElement('option');
+          opt.value = p.port;
+          opt.innerText = `${p.port} (${p.desc})`;
+          sel.appendChild(opt);
+        });
+      } catch (e) {
+        console.error("Port load error:", e);
+      }
+    }
+
+    async function toggleConnect() {
+      const port = document.getElementById('portSelect').value;
+      try {
+        const res = await fetch('/api/connect', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({port})
+        });
+        const d = await res.json();
+        const lbl = document.getElementById('connLabel');
+        const dot = document.getElementById('connDot');
+        if (d.mode === 'LIVE') {
+          lbl.innerText = `Connected (${d.port})`;
+          lbl.className = "text-emerald-400 font-medium";
+          dot.className = "w-2 h-2 rounded-full bg-emerald-400";
+        } else {
+          lbl.innerText = "Simulation Mode";
+          lbl.className = "text-textSecondary font-medium";
+          dot.className = "w-2 h-2 rounded-full bg-statusPass";
+        }
+      } catch (e) {
+        alert("Failed to connect to " + port);
+      }
+    }
+
+    async function triggerEnroll() {
+      await fetch('/api/enroll', {method: 'POST'});
+    }
+
+    async function triggerVerify() {
+      await fetch('/api/verify', {method: 'POST'});
+    }
+
+    async function setCondition(cond) {
+      await fetch('/api/set_condition', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({condition: cond})
+      });
+    }
+
+    async function toggleContinuous() {
+      isContinuous = !isContinuous;
+      const btn = document.getElementById('btnContinuous');
+      if (isContinuous) {
+        btn.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-statusPass"></span> Continuous';
+      } else {
+        btn.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-textMuted"></span> Paused';
+      }
+      await fetch('/api/toggle_continuous', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({continuous: isContinuous})
+      });
+    }
+
+    loadPorts();
+    initWebSocket();
+  </script>
+</body>
+</html>
