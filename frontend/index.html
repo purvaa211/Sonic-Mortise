@@ -101,7 +101,7 @@
 
           <div>
             <div class="text-xs text-textMuted uppercase font-mono tracking-wider">Active Challenge</div>
-            <div id="metricChallenge" class="text-xl font-bold font-mono text-textPrimary mt-0.5">Nonce #05</div>
+            <div id="metricChallenge" class="text-xl font-bold font-mono text-textPrimary mt-0.5">Code #05</div>
             <div id="metricSeq" class="text-[11px] text-textMuted font-mono mt-0.5">Sequence 104</div>
           </div>
         </div>
@@ -471,7 +471,7 @@
       }
 
       // Meta info
-      document.getElementById('metricChallenge').innerText = `Nonce #0${pkt.challenge || 1}`;
+      document.getElementById('metricChallenge').innerText = `Code #0${pkt.challenge || 1}`;
       document.getElementById('metricSeq').innerText = `Sequence ${pkt.seq || 0}`;
 
       // Features
@@ -517,7 +517,7 @@
       item.className = "flex items-center justify-between p-2 rounded bg-bgMain border border-borderSubtle text-[11px]";
       item.innerHTML = `
         <span class="text-textMuted">${time}</span>
-        <span class="text-textSecondary">Nonce #0${pkt.challenge}</span>
+        <span class="text-textSecondary">Code #0${pkt.challenge}</span>
         <span class="font-semibold ${color}">${st}</span>
         <span class="text-textPrimary">${pkt.score}%</span>
       `;
