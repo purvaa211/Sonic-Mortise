@@ -48,16 +48,16 @@
       <!-- Connection & Status Bar -->
       <div class="flex items-center gap-3">
         <div class="flex items-center gap-2 bg-bgMain px-3 py-1.5 rounded-md border border-borderSubtle text-xs">
-          <span id="connDot" class="w-2 h-2 rounded-full bg-statusPass"></span>
-          <span id="connLabel" class="text-textSecondary font-medium">Simulation Mode</span>
+          <span id="connDot" class="w-2 h-2 rounded-full bg-statusPass animate-pulse"></span>
+          <span id="connLabel" class="text-textSecondary font-medium">Simulation (Running)</span>
         </div>
 
-        <select id="portSelect" class="bg-bgMain text-xs text-textSecondary border border-borderSubtle rounded-md px-2.5 py-1.5 focus:outline-none focus:border-brandBlue transition">
-          <option value="SIMULATION">Virtual Cavity (Sim)</option>
+        <select id="portSelect" onchange="handlePortChange()" class="bg-bgMain text-xs text-textSecondary border border-borderSubtle rounded-md px-2.5 py-1.5 focus:outline-none focus:border-brandBlue transition">
+          <option value="SIMULATION">1. Virtual Cavity (Sim) - Auto Run</option>
         </select>
 
         <button id="btnConnect" onclick="toggleConnect()" class="text-xs px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-textPrimary font-medium border border-borderSubtle transition">
-          Connect
+          Switch Port
         </button>
       </div>
 
@@ -94,7 +94,7 @@
           <div>
             <div class="text-xs text-textMuted uppercase font-mono tracking-wider">Similarity Score</div>
             <div id="metricScore" class="text-3xl font-bold font-mono text-statusPass mt-0.5">97.2%</div>
-            <div class="text-[11px] text-textMuted mt-0.5">Threshold: &ge; 75.0%</div>
+            <div id="metricThreshold" class="text-[11px] text-textMuted mt-0.5">Threshold: &ge; 75.0%</div>
           </div>
 
           <div class="h-10 w-[1px] bg-borderSubtle hidden sm:block"></div>
@@ -121,7 +121,7 @@
           <div class="flex items-center justify-between">
             <div>
               <h2 class="text-sm font-semibold text-white">Ultrasonic Response Waveform</h2>
-              <p class="text-xs text-textMuted">40 kHz acoustic reflection captured inside the connector cavity</p>
+              <p id="waveformSubtext" class="text-xs text-textMuted">40 kHz acoustic reflection captured inside the connector cavity</p>
             </div>
 
             <!-- Legend -->
@@ -187,8 +187,11 @@
           </div>
 
           <!-- SIMULATION TEST CONDITIONS -->
-          <div class="pt-3 border-t border-borderSubtle">
-            <span class="text-xs text-textMuted font-medium block mb-2">Simulate Physical Conditions:</span>
+          <div id="simConditionsSection" class="pt-3 border-t border-borderSubtle transition-opacity">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs text-textMuted font-medium block">Simulate Physical Conditions:</span>
+              <span id="simActiveNotice" class="text-[10px] text-textMuted font-mono">Active (1st Option Selected)</span>
+            </div>
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <button onclick="setCondition('SEATED')" class="p-2.5 rounded-lg border border-borderSubtle hover:border-statusPass/50 bg-bgMain text-left transition group">
                 <div class="text-xs font-medium text-textPrimary group-hover:text-statusPass">Seated Correctly</div>
@@ -231,13 +234,13 @@
             <div class="bg-bgMain p-3 rounded-lg border border-borderSubtle">
               <span class="text-[11px] text-textMuted block font-mono">Temperature</span>
               <span id="sensorTemp" class="text-xl font-semibold font-mono text-textPrimary mt-0.5 block">26.4 °C</span>
-              <span class="text-[10px] text-statusPass font-mono mt-1 block">Verified</span>
+              <span id="sensorTempStatus" class="text-[10px] text-statusPass font-mono mt-1 block">Verified</span>
             </div>
 
             <div class="bg-bgMain p-3 rounded-lg border border-borderSubtle">
               <span class="text-[11px] text-textMuted block font-mono">Pressure</span>
               <span id="sensorPressure" class="text-xl font-semibold font-mono text-textPrimary mt-0.5 block">101.3 kPa</span>
-              <span class="text-[10px] text-statusPass font-mono mt-1 block">Nominal</span>
+              <span id="sensorPressureStatus" class="text-[10px] text-statusPass font-mono mt-1 block">Nominal</span>
             </div>
           </div>
 
@@ -245,7 +248,7 @@
           <div class="bg-bgMain p-3 rounded-lg border border-borderSubtle space-y-1.5">
             <div class="flex items-center justify-between text-[11px] text-textMuted font-mono">
               <span>HMAC-SHA256 SIGNATURE</span>
-              <span class="text-statusPass">VALID</span>
+              <span id="hmacStatus" class="text-statusPass">VALID</span>
             </div>
             <div id="hmacDigest" class="text-xs font-mono text-textSecondary break-all bg-cardBg/60 p-2 rounded border border-borderSubtle leading-relaxed">
               e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
@@ -279,7 +282,7 @@
   <footer class="border-t border-borderSubtle bg-cardBg py-4 text-xs text-textMuted">
     <div class="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-2">
       <div>SonicMortise Physical-Layer Attestation Interface</div>
-      <div class="text-[11px]">VIT Pune &bull; Department of IoT, Cybersecurity and Blockchain</div>
+      <div class="text-[11px]">Department of IoT, Cybersecurity and Blockchain</div>
     </div>
   </footer>
 
@@ -318,7 +321,7 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        animation: { duration: 180 },
+        animation: false,
         plugins: {
           legend: { display: false },
           tooltip: { enabled: true }
@@ -342,6 +345,7 @@
 
     let ws = null;
     let isContinuous = true;
+    let isCurrentStatic = false;
 
     function initWebSocket() {
       const loc = window.location;
@@ -362,7 +366,63 @@
       };
     }
 
+    function renderStaticState(pkt) {
+      isCurrentStatic = true;
+      const container = document.getElementById('statusContainer');
+      const tag = document.getElementById('statusTag');
+      const title = document.getElementById('statusTitle');
+      const reason = document.getElementById('statusReason');
+      const policy = document.getElementById('policyTag');
+      const scoreEl = document.getElementById('metricScore');
+      const waveLegend = document.getElementById('waveformLegend');
+      const portName = document.getElementById('portSelect').value;
+
+      container.style.borderColor = '#232733';
+      tag.className = "text-xs font-semibold px-2.5 py-1 rounded-md bg-zinc-800 text-textSecondary border border-borderSubtle tracking-wide uppercase font-mono";
+      tag.innerText = "STATIC / STANDBY";
+      policy.innerText = pkt.policy_action || `Port ${portName} Selected • Static Mode`;
+      title.innerText = `Hardware Mode: ${portName}`;
+      reason.innerText = pkt.reason || `System is static on ${portName}. Interrogation runs only on hardware trigger or when 1st option (Simulation) is selected.`;
+      
+      scoreEl.innerText = "--%";
+      scoreEl.className = "text-3xl font-bold font-mono text-textMuted mt-0.5";
+      
+      document.getElementById('metricChallenge').innerText = "--";
+      document.getElementById('metricSeq').innerText = "Static";
+
+      document.getElementById('featPeak').innerText = "--";
+      document.getElementById('featOnset').innerText = "--";
+      document.getElementById('featEnergy').innerText = "--";
+      document.getElementById('featCorr').innerText = "--";
+
+      document.getElementById('sensorTemp').innerText = "-- °C";
+      document.getElementById('sensorTempStatus').innerText = "Standby";
+      document.getElementById('sensorPressure').innerText = "-- kPa";
+      document.getElementById('sensorPressureStatus').innerText = "Standby";
+      document.getElementById('hmacStatus').innerText = "STANDBY";
+      document.getElementById('hmacStatus').className = "text-textMuted";
+      document.getElementById('hmacDigest').innerText = pkt.hmac || `Awaiting hardware transmission on ${portName}...`;
+
+      waveLegend.className = "flex items-center gap-1.5 text-textMuted font-mono";
+      if (waveLegend.children[0]) waveLegend.children[0].className = "w-3.5 h-[2px] bg-zinc-600 inline-block";
+
+      // Render static baseline and flat idle response line
+      waveChart.data.datasets[1].borderColor = '#3f4452';
+      waveChart.data.datasets[1].data = pkt.wave || Array(100).fill(2048);
+      if (pkt.enrolled_wave && pkt.enrolled_wave.length > 0) {
+        waveChart.data.datasets[0].data = pkt.enrolled_wave;
+      }
+      waveChart.update();
+    }
+
     function renderState(pkt) {
+      // If packet is static, render clean static state and do NOT add to audit log
+      if (pkt.is_static || pkt.state === 'STANDBY') {
+        renderStaticState(pkt);
+        return;
+      }
+
+      isCurrentStatic = false;
       const state = pkt.state || 'INVALID_INDETERMINATE';
       const container = document.getElementById('statusContainer');
       const tag = document.getElementById('statusTag');
@@ -383,7 +443,7 @@
         scoreEl.className = "text-3xl font-bold font-mono text-emerald-400 mt-0.5";
         waveChart.data.datasets[1].borderColor = '#22c55e';
         waveLegend.className = "flex items-center gap-1.5 text-emerald-400";
-        waveLegend.children[0].className = "w-3.5 h-[2px] bg-emerald-400 inline-block";
+        if (waveLegend.children[0]) waveLegend.children[0].className = "w-3.5 h-[2px] bg-emerald-400 inline-block";
       } else if (state === 'MISMATCH') {
         container.style.borderColor = '#ef444444';
         tag.className = "text-xs font-semibold px-2.5 py-1 rounded-md bg-rose-500/10 text-rose-400 border border-rose-500/30 tracking-wide uppercase font-mono";
@@ -395,7 +455,7 @@
         scoreEl.className = "text-3xl font-bold font-mono text-rose-400 mt-0.5";
         waveChart.data.datasets[1].borderColor = '#ef4444';
         waveLegend.className = "flex items-center gap-1.5 text-rose-400";
-        waveLegend.children[0].className = "w-3.5 h-[2px] bg-rose-400 inline-block";
+        if (waveLegend.children[0]) waveLegend.children[0].className = "w-3.5 h-[2px] bg-rose-400 inline-block";
       } else {
         container.style.borderColor = '#f59e0b44';
         tag.className = "text-xs font-semibold px-2.5 py-1 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/30 tracking-wide uppercase font-mono";
@@ -407,7 +467,7 @@
         scoreEl.className = "text-3xl font-bold font-mono text-amber-400 mt-0.5";
         waveChart.data.datasets[1].borderColor = '#f59e0b';
         waveLegend.className = "flex items-center gap-1.5 text-amber-400";
-        waveLegend.children[0].className = "w-3.5 h-[2px] bg-amber-400 inline-block";
+        if (waveLegend.children[0]) waveLegend.children[0].className = "w-3.5 h-[2px] bg-amber-400 inline-block";
       }
 
       // Meta info
@@ -423,9 +483,13 @@
       // Sensor Payload
       if (pkt.sensor) {
         document.getElementById('sensorTemp').innerText = `${pkt.sensor.temp || 25.0} °C`;
+        document.getElementById('sensorTempStatus').innerText = "Verified";
         document.getElementById('sensorPressure').innerText = `${pkt.sensor.pressure || 101.3} kPa`;
+        document.getElementById('sensorPressureStatus').innerText = "Nominal";
       }
       if (pkt.hmac) {
+        document.getElementById('hmacStatus').innerText = "VALID";
+        document.getElementById('hmacStatus').className = "text-statusPass";
         document.getElementById('hmacDigest').innerText = pkt.hmac;
       }
 
@@ -438,11 +502,12 @@
       }
       waveChart.update();
 
-      // Audit list
+      // Append to audit list
       appendAuditLog(pkt);
     }
 
     function appendAuditLog(pkt) {
+      if (pkt.is_static || pkt.state === 'STANDBY') return;
       const list = document.getElementById('logList');
       const time = pkt.timestamp || new Date().toLocaleTimeString();
       const st = pkt.state || 'UNKNOWN';
@@ -460,26 +525,18 @@
       if (list.children.length > 10) list.removeChild(list.lastChild);
     }
 
-    // Actions
-    async function loadPorts() {
-      try {
-        const res = await fetch('/api/ports');
-        const data = await res.json();
-        const sel = document.getElementById('portSelect');
-        sel.innerHTML = '<option value="SIMULATION">Virtual Cavity (Sim)</option>';
-        data.ports.forEach(p => {
-          const opt = document.createElement('option');
-          opt.value = p.port;
-          opt.innerText = `${p.port} (${p.desc})`;
-          sel.appendChild(opt);
-        });
-      } catch (e) {
-        console.error("Port load error:", e);
-      }
+    // Port selection & connection handlers
+    async function handlePortChange() {
+      const port = document.getElementById('portSelect').value;
+      await switchPort(port);
     }
 
     async function toggleConnect() {
       const port = document.getElementById('portSelect').value;
+      await switchPort(port);
+    }
+
+    async function switchPort(port) {
       try {
         const res = await fetch('/api/connect', {
           method: 'POST',
@@ -489,17 +546,75 @@
         const d = await res.json();
         const lbl = document.getElementById('connLabel');
         const dot = document.getElementById('connDot');
+        const simNotice = document.getElementById('simActiveNotice');
+        const simSection = document.getElementById('simConditionsSection');
+        const btnContinuous = document.getElementById('btnContinuous');
+        
         if (d.mode === 'LIVE') {
-          lbl.innerText = `Connected (${d.port})`;
-          lbl.className = "text-emerald-400 font-medium";
-          dot.className = "w-2 h-2 rounded-full bg-emerald-400";
+          // Hardware Port Mode (COM4, COM5, etc.) -> STATIC
+          lbl.innerText = `${d.port} (Static)`;
+          lbl.className = "text-textSecondary font-medium font-mono";
+          dot.className = "w-2 h-2 rounded-full bg-zinc-500";
+          
+          if (simNotice) simNotice.innerText = "Inactive (Static COM Mode)";
+          if (simSection) {
+            simSection.classList.add('opacity-40');
+            simSection.style.pointerEvents = 'none';
+          }
+          if (btnContinuous) {
+            btnContinuous.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-zinc-500"></span> Static Mode';
+            btnContinuous.disabled = true;
+            btnContinuous.classList.add('opacity-50', 'cursor-not-allowed');
+          }
+
+          // Immediately render static view
+          renderStaticState({
+            policy_action: `Port ${d.port} Selected • Static Mode`,
+            reason: `Port ${d.port} is selected and static. Interrogation runs only on hardware trigger or when 1st option is selected.`,
+            hmac: `Awaiting hardware transmission on ${d.port}...`
+          });
         } else {
-          lbl.innerText = "Simulation Mode";
+          // 1st Option: SIMULATION -> RUNS DYNAMICALLY
+          lbl.innerText = "Simulation (Running)";
           lbl.className = "text-textSecondary font-medium";
-          dot.className = "w-2 h-2 rounded-full bg-statusPass";
+          dot.className = "w-2 h-2 rounded-full bg-statusPass animate-pulse";
+          
+          if (simNotice) simNotice.innerText = "Active (1st Option Selected)";
+          if (simSection) {
+            simSection.classList.remove('opacity-40');
+            simSection.style.pointerEvents = 'auto';
+          }
+          if (btnContinuous) {
+            btnContinuous.disabled = false;
+            btnContinuous.classList.remove('opacity-50', 'cursor-not-allowed');
+            btnContinuous.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-statusPass"></span> Continuous';
+          }
         }
       } catch (e) {
-        alert("Failed to connect to " + port);
+        console.error("Port switch error:", e);
+      }
+    }
+
+    async function loadPorts() {
+      try {
+        const res = await fetch('/api/ports');
+        const data = await res.json();
+        const sel = document.getElementById('portSelect');
+        const currentVal = sel.value;
+        sel.innerHTML = '<option value="SIMULATION">1. Virtual Cavity (Sim) - Auto Run</option>';
+        data.ports.forEach(p => {
+          const opt = document.createElement('option');
+          opt.value = p.port;
+          opt.innerText = `${p.port} (${p.desc})`;
+          sel.appendChild(opt);
+        });
+        if (data.connected_port) {
+          sel.value = data.connected_port;
+        } else if (currentVal && Array.from(sel.options).some(o => o.value === currentVal)) {
+          sel.value = currentVal;
+        }
+      } catch (e) {
+        console.error("Port load error:", e);
       }
     }
 
@@ -520,6 +635,7 @@
     }
 
     async function toggleContinuous() {
+      if (document.getElementById('portSelect').value !== 'SIMULATION') return;
       isContinuous = !isContinuous;
       const btn = document.getElementById('btnContinuous');
       if (isContinuous) {

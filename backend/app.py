@@ -37,6 +37,7 @@ class SystemState:
         self.serial_conn: Optional[serial.Serial] = None
         self.is_connected = False
         self.continuous_mode = True
+        self.has_new_live_packet = False
         
         self.is_enrolled = True
         self.enrolled_challenge = 5
@@ -67,9 +68,31 @@ class SystemState:
             "hmac": "",
             "policy_action": "ADMITTED_TO_DATA_PATH",
             "wave": self.enrolled_wave,
-            "enrolled_wave": self.enrolled_wave
+            "enrolled_wave": self.enrolled_wave,
+            "is_static": False
         }
         self.connected_websockets: List[WebSocket] = []
+
+    def get_static_packet(self, port_name: Optional[str] = None) -> Dict[str, Any]:
+        p_name = port_name or self.serial_port or "Hardware Port"
+        return {
+            "timestamp": "--:--:--",
+            "seq": "--",
+            "challenge": "--",
+            "state": "STANDBY",
+            "reason": f"Port {p_name} is static. Interrogation runs only on hardware trigger or when 1st option (Simulation) is selected.",
+            "score": 0.0,
+            "dc_offset": 2048.0,
+            "peak_amp": 0.0,
+            "energy": 0.0,
+            "onset_idx": 0,
+            "sensor": {"temp": "--", "pressure": "--"},
+            "hmac": f"Awaiting hardware transmission on {p_name}...",
+            "policy_action": f"STANDBY ({p_name})",
+            "wave": [2048] * 100,
+            "enrolled_wave": self.enrolled_wave,
+            "is_static": True
+        }
 
     def _generate_waveform(self, challenge_code: int, condition: str = "SEATED") -> List[int]:
         points = 100
@@ -189,7 +212,8 @@ class SystemState:
             "hmac": signature,
             "policy_action": policy_action,
             "wave": wave,
-            "enrolled_wave": self.enrolled_wave
+            "enrolled_wave": self.enrolled_wave,
+            "is_static": False
         }
         self.latest_result = packet
         return packet
@@ -227,7 +251,8 @@ def read_serial_worker():
                             "hmac": data.get("hmac", ""),
                             "policy_action": action,
                             "wave": data.get("wave", []),
-                            "enrolled_wave": state_mgr.enrolled_wave
+                            "enrolled_wave": state_mgr.enrolled_wave,
+                            "is_static": False
                         }
                         if st == "ENROLLED":
                             state_mgr.is_enrolled = True
@@ -236,7 +261,8 @@ def read_serial_worker():
                             packet["reason"] = "Baseline profile enrolled successfully."
 
                         state_mgr.latest_result = packet
-            except Exception as e:
+                        state_mgr.has_new_live_packet = True
+            except Exception:
                 time.sleep(0.5)
         time.sleep(0.01)
 
@@ -245,19 +271,30 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     state_mgr.connected_websockets.append(websocket)
     try:
-        await websocket.send_json(state_mgr.latest_result)
+        # Initial state packet on connect
+        if state_mgr.mode == "SIMULATION":
+            await websocket.send_json(state_mgr.latest_result)
+        else:
+            await websocket.send_json(state_mgr.get_static_packet())
+
         while True:
+            # OPTION 1 (SIMULATION): Run and stream dynamic simulated readings
             if state_mgr.mode == "SIMULATION" and state_mgr.continuous_mode:
                 pkt = state_mgr.generate_simulated_packet()
                 await websocket.send_json(pkt)
                 await asyncio.sleep(1.2)
+            # OTHER OPTIONS (COM4, COM5, etc.): REMAIN STATIC!
+            # Only send if an actual hardware packet arrived over serial
             elif state_mgr.mode == "LIVE":
-                await websocket.send_json(state_mgr.latest_result)
-                await asyncio.sleep(0.8)
+                if state_mgr.has_new_live_packet:
+                    state_mgr.has_new_live_packet = False
+                    await websocket.send_json(state_mgr.latest_result)
+                await asyncio.sleep(0.1)
             else:
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(0.5)
     except WebSocketDisconnect:
-        state_mgr.connected_websockets.remove(websocket)
+        if websocket in state_mgr.connected_websockets:
+            state_mgr.connected_websockets.remove(websocket)
     except Exception:
         if websocket in state_mgr.connected_websockets:
             state_mgr.connected_websockets.remove(websocket)
@@ -271,25 +308,66 @@ def get_available_ports():
 @app.post("/api/connect")
 async def connect_port(payload: Dict[str, str]):
     port = payload.get("port")
+    # Option 1: Virtual Cavity Simulation
     if not port or port == "SIMULATION":
         if state_mgr.serial_conn and state_mgr.serial_conn.is_open:
-            state_mgr.serial_conn.close()
+            try:
+                state_mgr.serial_conn.close()
+            except Exception:
+                pass
         state_mgr.mode = "SIMULATION"
         state_mgr.serial_port = None
         state_mgr.is_connected = True
+        state_mgr.continuous_mode = True
+        
+        # Wake up UI with a simulated packet immediately
+        pkt = state_mgr.generate_simulated_packet()
+        for ws in list(state_mgr.connected_websockets):
+            try:
+                await ws.send_json(pkt)
+            except Exception:
+                pass
         return {"status": "success", "mode": "SIMULATION"}
     
-    try:
-        if state_mgr.serial_conn and state_mgr.serial_conn.is_open:
+    # Options 2, 3...: Real COM ports (COM4, COM5, etc.) -> MUST REMAIN STATIC
+    if state_mgr.serial_conn and state_mgr.serial_conn.is_open:
+        try:
             state_mgr.serial_conn.close()
-        conn = serial.Serial(port, 115200, timeout=1)
+        except Exception:
+            pass
+
+    state_mgr.mode = "LIVE"
+    state_mgr.serial_port = port
+    state_mgr.continuous_mode = False  # DO NOT RUN AUTOMATICALLY IN HARDWARE MODE
+    state_mgr.has_new_live_packet = False
+    
+    conn_opened = False
+    try:
+        conn = serial.Serial(port, 115200, timeout=0.1)
         state_mgr.serial_conn = conn
-        state_mgr.serial_port = port
-        state_mgr.mode = "LIVE"
         state_mgr.is_connected = True
-        return {"status": "success", "mode": "LIVE", "port": port}
+        conn_opened = True
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        state_mgr.serial_conn = None
+        state_mgr.is_connected = False
+        print(f"Port {port} status: {e}. Ready in static mode.")
+
+    static_pkt = state_mgr.get_static_packet(port_name=port)
+    state_mgr.latest_result = static_pkt
+
+    for ws in list(state_mgr.connected_websockets):
+        try:
+            await ws.send_json(static_pkt)
+        except Exception:
+            pass
+
+    return {
+        "status": "success",
+        "mode": "LIVE",
+        "port": port,
+        "connected": conn_opened,
+        "is_static": True
+    }
 
 @app.post("/api/enroll")
 async def enroll_baseline(payload: Optional[Dict[str, Any]] = None):
@@ -298,13 +376,20 @@ async def enroll_baseline(payload: Optional[Dict[str, Any]] = None):
         cmd = f"ENROLL {challenge}\n"
         state_mgr.serial_conn.write(cmd.encode('utf-8'))
         return {"status": "enrolling_hardware", "challenge": challenge}
-    else:
+    elif state_mgr.mode == "SIMULATION":
         state_mgr.is_enrolled = True
         state_mgr.enrolled_challenge = challenge
         state_mgr.enrolled_wave = state_mgr._generate_waveform(challenge, "SEATED")
         state_mgr.sim_condition = "SEATED"
         pkt = state_mgr.generate_simulated_packet()
+        for ws in list(state_mgr.connected_websockets):
+            try:
+                await ws.send_json(pkt)
+            except Exception:
+                pass
         return {"status": "enrolled_simulation", "packet": pkt}
+    else:
+        return {"status": "static_mode", "msg": f"Port {state_mgr.serial_port} is in static mode."}
 
 @app.post("/api/verify")
 async def verify_now(payload: Optional[Dict[str, Any]] = None):
@@ -313,12 +398,21 @@ async def verify_now(payload: Optional[Dict[str, Any]] = None):
         cmd = f"VERIFY {challenge}\n"
         state_mgr.serial_conn.write(cmd.encode('utf-8'))
         return {"status": "verifying_hardware", "challenge": challenge}
-    else:
+    elif state_mgr.mode == "SIMULATION":
         pkt = state_mgr.generate_simulated_packet()
+        for ws in list(state_mgr.connected_websockets):
+            try:
+                await ws.send_json(pkt)
+            except Exception:
+                pass
         return {"status": "verified_simulation", "packet": pkt}
+    else:
+        return {"status": "static_mode", "msg": f"Port {state_mgr.serial_port} is in static mode."}
 
 @app.post("/api/set_condition")
 def set_sim_condition(payload: Dict[str, str]):
+    if state_mgr.mode != "SIMULATION":
+        return {"status": "ignored", "msg": "Simulation conditions only active in Option 1 (Virtual Cavity)"}
     cond = payload.get("condition", "SEATED")
     if cond in ["SEATED", "LOOSE", "DISPLACED", "NOISE"]:
         state_mgr.sim_condition = cond
@@ -327,7 +421,8 @@ def set_sim_condition(payload: Dict[str, str]):
 
 @app.post("/api/toggle_continuous")
 def toggle_continuous(payload: Dict[str, bool]):
-    state_mgr.continuous_mode = payload.get("continuous", True)
+    if state_mgr.mode == "SIMULATION":
+        state_mgr.continuous_mode = payload.get("continuous", True)
     return {"status": "success", "continuous": state_mgr.continuous_mode}
 
 frontend_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend")
